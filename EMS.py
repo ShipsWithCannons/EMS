@@ -5,7 +5,6 @@ import time
 
 banks_mail = []
 elevators_mail = []
-elevators = []
 floors_mail = []
 
 
@@ -13,6 +12,7 @@ class Bank(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.mailbox = Queue.Queue()
+        self.elevators = []
         banks_mail.append(self.mailbox)
 
     def run(self):
@@ -23,13 +23,13 @@ class Bank(threading.Thread):
                 sys.stdout.write(str(self) + ' shutting down' + '\n')
                 return
             elif data[1] == 'UP':
-                for idx, elevator in enumerate(elevators):
+                for idx, elevator in enumerate(self.elevators):
                     if elevator.floor <= data[0] and (elevator.direction == 'UP' or elevator.direction == 'IDLE'):
                         sys.stdout.write('Elevator ' + str(idx) + ' available for floor ' + str(data[0]) + '\n')
                         elevators_mail[idx].put(data)
                         break
             elif data[1] == 'DOWN':
-                for idx, elevator in enumerate(elevators):
+                for idx, elevator in enumerate(self.elevators):
                     if elevator.floor >= data[0] and (elevator.direction == 'DOWN' or elevator.direction == 'IDLE'):
                         sys.stdout.write('Elevator ' + str(idx) + ' available for floor ' + str(data[0]) + '\n')
                         elevators_mail[idx].put(data)
@@ -42,13 +42,11 @@ class Bank(threading.Thread):
         self.mailbox.put('shutdown')
         self.join()
 
-
 class Elevator(threading.Thread):
     def __init__(self, floor=0, direction='IDLE'):
         threading.Thread.__init__(self)
         self.mailbox = Queue.Queue()
         elevators_mail.append(self.mailbox)
-        elevators.append(self)
         self.floor = floor
         self.direction = direction
         self.target = self.floor
@@ -113,58 +111,51 @@ def broadcast_event(data):
     for q in elevators_mail:
         q.put(data)
 
-b0 = Bank()
-b0.start()
+def main():
+    banks = [Bank() for i in range(1)]
+    for bank in banks:
+        bank.start()
 
-t1 = Elevator()
-t2 = Elevator()
-t3 = Elevator(8, 'DOWN')
-t1.start()
-t2.start()
-t3.start()
+    banks[0].elevators = [Elevator(0) for i in range(5)]
+    for elevator in banks[0].elevators:
+        elevator.start()
 
-f0 = Floor(0)
-f1 = Floor(1)
-f2 = Floor(2)
-f3 = Floor(3)
-f4 = Floor(4)
-f5 = Floor(5)
-f6 = Floor(6)
-f7 = Floor(7)
-f8 = Floor(8)
+    floors = [Floor(i) for i in range(9)]
+    for floor in floors:
+        floor.start()
 
-f0.start()
-f1.start()
-f2.start()
-f3.start()
-f4.start()
-f5.start()
-f6.start()
-f7.start()
-f8.start()
+    for floor, direction in ((1, 'UP'), (4, 'UP'), (6, 'DOWN'), (7, 'UP'), (8, 'DOWN')):
+        floors[floor].call(direction)
 
-f1.call('UP')
-f4.call('UP')
-f6.call('DOWN')
+    time.sleep(0.5)
 
-time.sleep(0.5) # Make sure all other calls are finished before shutdown
+    for floor, direction in ((5, 'UP'), (2, 'UP'), (4, 'DOWN')):
+        floors[floor].call(direction)
 
-sys.stdout.write('\nRecall all elevators back to Floor 0\n\n')
+    time.sleep(0.5)
 
-broadcast_event((0, 'IDLE'))
+    for floor, direction in ((2, 'DOWN'), (3, 'UP'), (7, 'DOWN')):
+        floors[floor].call(direction)
 
-f0.stop()
-f1.stop()
-f2.stop()
-f3.stop()
-f4.stop()
-f5.stop()
-f6.stop()
-f7.stop()
-f8.stop()
+    time.sleep(0.5)
 
-t1.stop()
-t2.stop()
-t3.stop()
+    for floor, direction in ((6, 'UP'),):
+        floors[floor].call(direction)
 
-b0.stop()
+    time.sleep(0.5) # Make sure all other calls are finished before shutdown
+
+    sys.stdout.write('\nRecall all elevators back to Floor 0\n\n')
+
+    broadcast_event((0, 'IDLE'))
+
+    for floor in floors:
+        floor.stop()
+
+    for elevator in banks[0].elevators:
+        elevator.stop()
+
+    for bank in banks:
+        bank.stop()
+
+if __name__ == "__main__":
+    main()
